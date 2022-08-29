@@ -9,8 +9,10 @@ using Yandex.Cloud.Functions;
 
 namespace SudRfParser
 {
-	public class Handler : YcFunction<object, Task<IEnumerable<CourtInfo>>>
+	public class Handler : YcFunction<Request, Task<object>>
 	{
+		private const string _login = "test";
+		private const string _password = "testpass";
 		private const string _courtQuery = "?id=300&act=ajax_search&searchtype=sp&court_subj={0}&suds_subj=&var=true";
 
 		public Handler()
@@ -18,17 +20,35 @@ namespace SudRfParser
 			Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 		}
 		
-		public async Task<IEnumerable<CourtInfo>> FunctionHandler(object _, Context context)
+		public async Task<object> FunctionHandler(Request requset, Context context)
 		{
+			if (requset == null || requset.login != _login || requset.password != _password)
+			{
+				return new
+				{
+					error = "Доступ запрещен"
+				};
+			}
+			
 			using var client = new HttpClient();
 			client.BaseAddress = new Uri("https://sudrf.ru/index.php");
 			var subjectList = await GetSubjectList(client);
 
 			if (!subjectList.Any()) throw new Exception("Subjects not found");
 
+			var limitedSubjectList = subjectList
+				.Skip(requset.offset)
+				.Take(requset.limit)
+				.ToList();
+
+			if (!limitedSubjectList.Any())
+			{
+				return Enumerable.Empty<CourtInfo>();
+			}
+			
 			var response = new List<CourtInfo>();
 
-			foreach (var subject in subjectList)
+			foreach (var subject in limitedSubjectList)
 			{
 				response.Add(new CourtInfo
 				{
